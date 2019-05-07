@@ -1,4 +1,7 @@
 module Logic where
+  
+  --TODO FIXME the transformations should be implemented via some kind of map between the patterns, probably. So the inverse operations can be implemented easy.
+  --e.g. identity_laws_map = [((And s T), s), ((And s F), F), ..]
 
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
@@ -11,8 +14,8 @@ data Symbol =
   | Not (Symbol)
   | Or (Symbol) (Symbol)
   | And (Symbol) (Symbol)
---  | T -- do I want this here?
---  | F
+  | T -- do I want this here?
+  | F
 
 
 instance Show Symbol where --Fixme should only print necessary parens!
@@ -20,6 +23,8 @@ instance Show Symbol where --Fixme should only print necessary parens!
   show (Or a b) = "(" ++ (show a) ++ " ∨ "  ++ (show b) ++ ")"
   show (Not s) = "¬(" ++ (show s) ++ ")"
   show (Literal s) = s
+  show (T) = "⊤"
+  show (F) = "⊥"
 
 
 instance Eq Symbol where 
@@ -63,7 +68,7 @@ idempotence  :: Symbol -> Symbol
 idempotence (And s t) = if s == t then t else And (idempotence s) (idempotence t)
 idempotence (Or s t) = if s == t then t else Or (idempotence s) (idempotence t)
 idempotence (Not s) = Not (idempotence s) --again not sure this is the intent...
-idempotence (Literal l) = Literal l
+idempotence l = l
 
 -- only (AB)C -> A(BC) supported for now
 associativity  :: Symbol -> Symbol
@@ -76,13 +81,13 @@ associativity (Or s c) =
     Or a b -> Or a (Or b c)
     _ -> Or (associativity s) (associativity c)
 associativity (Not s) = Not (associativity s) --again not sure this is the intent...
-associativity (Literal l) = Literal l 
+associativity l = l
 
 communicativity  :: Symbol -> Symbol
 communicativity (And s t) = And t s 
 communicativity (Or s t) = Or t s
 communicativity (Not s) = Not (communicativity s) --again not sure this is the intent...
-communicativity (Literal l) = Literal l 
+communicativity l = l
 
 --just left distributivity for now, right distributivity is trivial with commutativity though.
 distributivity :: Symbol -> Symbol
@@ -94,12 +99,35 @@ distributivity (Or s t) =
   case t of 
     And a b -> And (Or s a) (Or s b)
     _ -> Or (distributivity s) (distributivity t)
-distributivity (Not s) = Not (distributivity s)
-distributivity (Literal l) = Literal l
+distributivity (Not s) = Not $ distributivity s
+distributivity l = l
 
--- identity law not really supportable yet; add T and F to the symbol data type as fields?
+-- identity laws not really supportable yet; add T and F to the symbol data type as fields?
+identity_laws :: Symbol -> Symbol
+identity_laws (And s t) = case t of
+  T -> s
+  F -> F
+  _ -> And (identity_laws s) (identity_laws t)
+identity_laws (Or s t) = case t of
+  T -> T
+  F -> s
+  _ -> Or (identity_laws s) (identity_laws t)
+identity_laws (Not t) = Not $ identity_laws t
+identity_laws l = l
+
 
 --  complement: see identity
+complement_law :: Symbol -> Symbol
+complement_law (And s (Not t)) = F 
+complement_law (Or s (Not t)) = T
+complement_law (Not F) = T
+complement_law (Not T) = F
+complement_law (And s t) = And (complement_law s) (complement_law t)
+complement_law (Or s t) = Or (complement_law s) (complement_law t)
+complement_law (Not t) = Not (complement_law t)
+complement_law l = l
+
+
 
 --Todo the other way (from (not p) and (not q) to not (p and q)
 de_morgan :: Symbol -> Symbol
@@ -110,7 +138,7 @@ de_morgan (Not n) = case n of
   Or s t -> And (Not s) (Not t)
   _ -> Not (de_morgan n)
 --de_morgan (Literal l) = error "not possible to de_morgan!"
-de_morgan (Literal l) = Literal l
+de_morgan l = l
 
 
 simplify_nots :: Symbol -> Symbol
@@ -120,7 +148,7 @@ simplify_nots (Not s) =
   case s of 
     Not t -> simplify_nots t --double not, removed.
     _     -> Not (simplify_nots s)
-simplify_nots (Literal l) = Literal l
+simplify_nots l = l
 
 
 -- General functions
@@ -128,6 +156,7 @@ get_random_element :: [a] -> IO a
 get_random_element l = do
     i <- randomRIO(0, length l - 1)
     return (l !! i)
+
 
 
 
@@ -142,3 +171,12 @@ remove_duplicats' f [x] = [x]
 
 remove_duplicats :: Eq a => [a] -> [a]
 remove_duplicats [xs] = remove_duplicats' (==) [xs]
+
+--random stuff
+applyPairwise :: (a -> a -> b) -> [a] -> [b]
+applyPairwise pairF l = zipWith pairF l $ tail l
+
+--holdsPairwise :: (a -> a -> b) -> (b -> b -> b) -> [a] -> b
+--holdsPairwise pairF collectorF (x:xs) = case xs of
+  --(y:[xss]) -> collectorF (pairF x y) (holdsPairwise pairF collectorF xs)
+  --(y:[]) -> pairF x y

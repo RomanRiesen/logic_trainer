@@ -27,8 +27,8 @@ main =
     let a = Literal "a"
     let b = Literal "b"
     let c = Literal "c"
-    let simplificationsZip = [(idempotence, "Idempotence"), (associativity, "Associativity"), (communicativity, "Commutativity"), (distributivity, "Distributivity"), (de_morgan, "de Morgan")]
-    let s = (a `And` b) `Or` (a `And` b)
+    let simplificationsZip = [(idempotence, "Idempotence"), (associativity, "Associativity"), (communicativity, "Commutativity"), (distributivity, "Distributivity"), (identity_laws, "Identity"), (de_morgan, "de Morgan")]
+    let s = (a `And` b) `Or` (a `And` F)
     let start = (s, "start")
 
     l <- convolute 3 simplificationsZip s
@@ -42,7 +42,7 @@ main =
     putStrLn $ show s ++ " [start]"
     mapM_ (
       \(symbol, explanation) -> putStrLn $
-        foldr (++) "" ["⊨ ", show symbol, " [", explanation, "]"] 
+        foldr (++) "" [ " ⊨ ", show symbol, " [", explanation, "]"] 
       ) l
 
 
