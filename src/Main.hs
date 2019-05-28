@@ -11,7 +11,7 @@ convolute n l sym = do
  --TODO should only search for elements in l that actually change sym. -> filter
   (f, e) <- (get_random_element l)
   let sym' = f sym
-  if sym' == sym then
+  if sym' == sym then --if this symbol already is in the list it is not new (duh.)
     convolute n l sym
   else
       if n-1 > 0 then do
@@ -21,13 +21,20 @@ convolute n l sym = do
           return [(sym', e)]
 
 
+convolute' :: Int -> [(Symbol -> Symbol)] -> Symbol -> IO [Symbol]
+convolute' n l sym = do
+  c <- convolute n (zip l $ repeat "") sym
+  let c' = fst $ unzip c
+  return c'
+
+
 main :: IO ()
 main =
   do
     let a = Literal "a"
     let b = Literal "b"
     let c = Literal "c"
-    let simplificationsZip = [(idempotence, "Idempotence"), (associativity, "Associativity"), (communicativity, "Commutativity"), (distributivity, "Distributivity"), (identity_laws, "Identity"), (de_morgan, "de Morgan")]
+    let simplificationsZip = [(idempotence, "Idempotence"), (associativity, "Associativity"), (commutativity, "Commutativity"), (distributivity, "Distributivity"), (identity_laws, "Identity"), (de_morgan, "de Morgan")]
     let s = (a `And` b) `Or` (a `And` F)
     let start = (s, "start")
 

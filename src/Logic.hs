@@ -5,8 +5,14 @@ module Logic where
 
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
+import Data.Either (fromRight)
 --import Control.Monad.Random
 import System.Random
+import Text.ParserCombinators.Parsec
+import qualified Text.ParserCombinators.Parsec.Token as Token
+--import Text.Parsec.Expr
+--import Text.Parsec.Token
+
 
 -- Lispy --FIXME no empty
 data Symbol =
@@ -16,29 +22,77 @@ data Symbol =
   | And (Symbol) (Symbol)
   | T -- do I want this here?
   | F
+  deriving (Eq)
 
 
 instance Show Symbol where --Fixme should only print necessary parens!
-  show (And a b) = (show a) ++ " ∧ " ++ (show b)
-  show (Or a b) = "(" ++ (show a) ++ " ∨ "  ++ (show b) ++ ")"
-  show (Not s) = "¬(" ++ (show s) ++ ")"
+  --show (And a b) = "(" ++ (show a) ++ " ∧ " ++ (show b) ++ ")"
+  --show (Or a b) = "(" ++ (show a) ++ " ∨ "  ++ (show b) ++ ")"
+  --show (Not s) = "¬(" ++ (show s) ++ ")"
+  --show (Literal s) = s
+  --show (T) = "⊤"
+  --show (F) = "⊥"
+  show (And a b) = "(" ++ (show a) ++ " AND " ++ (show b) ++ ")"
+  show (Or a b) = "(" ++ (show a) ++ " OR "  ++ (show b) ++ ")"
+  show (Not s) = "not(" ++ (show s) ++ ")"
   show (Literal s) = s
-  show (T) = "⊤"
-  show (F) = "⊥"
+  show (T) = "T"
+  show (F) = "F"
+
+--instance Eq Symbol where  -- auto derived
+  --Literal a == Literal b = a == b
+  --(And a b) == (And c d) = (a == c) && (b == d)
+  --(Or a b) == (Or c d) = (a == c) && (b == d)
+  --(Not s) == (Not t) = (s == t)
+  --_ == _ = False
 
 
-instance Eq Symbol where 
-  Literal a == Literal b = a == b
-  (And a b) == (And c d) = (a == c) && (b == d)
-  (Or a b) == (Or c d) = (a == c) && (b == d)
-  (Not s) == (Not t) = (s == t)
-  _ == _ = False
+-- parsing! Only parse the symbols 'and', 'or', 'not', 'F', 'T', '(', ')'
+parseLiteral :: Parser Symbol
+parseLiteral = do
+  try spaces
+  first <- letter
+  rest <- many (letter <|> digit)
+  let str = first:rest
+  case str of
+    "T" -> return T
+    "F" -> return F
+    "not" -> do{try space; char '('; x <- do{parseExpr;}; char ')'; return $ Not x}
+    _ -> return $ Literal str
+
+-- (a and b) or c and d -> (Or (And a b) (And c d))
+parseAndOr :: Parser Symbol
+parseAndOr = do
+  char '('
+  try spaces
+  a <- parseExpr
+  spaces
+  op <- many letter
+  spaces
+  b <- parseExpr
+  try spaces
+  char ')'
+  return $ case op of 
+    "and" -> And a b
+    "or" -> Or a b
+
+-- at first skip everything in parentheses then parse nots before ands before ors...no clue how to do this yet. So simplest working solution first.
+parseExpr :: Parser Symbol
+parseExpr =  parseAndOr <|> parseLiteral
+
+readExpr :: String -> String
+readExpr input = case parse parseExpr "logic" input of
+    Left err -> "No match: " ++ show err
+    Right v -> "Found value: " ++ show v
 
 
---readSymbolFromString :: String -> Symbol
---readSymbolFromString
+readExpr' :: String -> Symbol
+readExpr' input = fromRight (Literal "ERROR") (parse parseExpr "logic" input)
+
 
 --instance Read Symbol where 
+--instance Read Symbol where
+   --readsPrec = readExpr' input
 
 
 evaluate :: Symbol -> (Map.Map String Bool) -> Bool
@@ -70,6 +124,12 @@ idempotence (Or s t) = if s == t then t else Or (idempotence s) (idempotence t)
 idempotence (Not s) = Not (idempotence s) --again not sure this is the intent...
 idempotence l = l
 
+idempotenceInvAnd :: Symbol -> Symbol
+idempotenceInvAnd t = And t t
+idempotenceInvOr :: Symbol -> Symbol
+idempotenceInvOr t = Or t t
+
+
 -- only (AB)C -> A(BC) supported for now
 associativity  :: Symbol -> Symbol
 associativity (And s c) =
@@ -83,11 +143,13 @@ associativity (Or s c) =
 associativity (Not s) = Not (associativity s) --again not sure this is the intent...
 associativity l = l
 
-communicativity  :: Symbol -> Symbol
-communicativity (And s t) = And t s 
-communicativity (Or s t) = Or t s
-communicativity (Not s) = Not (communicativity s) --again not sure this is the intent...
-communicativity l = l
+commutativity  :: Symbol -> Symbol
+commutativity (And s t) = And t s 
+commutativity (Or s t) = Or t s
+commutativity (Not s) = Not (commutativity s) --again not sure this is the intent...
+commutativity l = l
+--self inverse
+commutativityInv = commutativity
 
 --just left distributivity for now, right distributivity is trivial with commutativity though.
 distributivity :: Symbol -> Symbol
@@ -102,7 +164,6 @@ distributivity (Or s t) =
 distributivity (Not s) = Not $ distributivity s
 distributivity l = l
 
--- identity laws not really supportable yet; add T and F to the symbol data type as fields?
 identity_laws :: Symbol -> Symbol
 identity_laws (And s t) = case t of
   T -> s
@@ -115,8 +176,13 @@ identity_laws (Or s t) = case t of
 identity_laws (Not t) = Not $ identity_laws t
 identity_laws l = l
 
+-- THIS FEELS VERY WRONG AND NOT THOUGHT THROUGH!
+identity_lawsInvAnd :: Symbol -> Symbol
+identity_lawsInvAnd t = And t F
+identity_lawsInvOr :: Symbol -> Symbol
+identity_lawsInvOr t = Or t T
 
---  complement: see identity
+
 complement_law :: Symbol -> Symbol
 complement_law (And s (Not t)) = F 
 complement_law (Or s (Not t)) = T
@@ -126,7 +192,6 @@ complement_law (And s t) = And (complement_law s) (complement_law t)
 complement_law (Or s t) = Or (complement_law s) (complement_law t)
 complement_law (Not t) = Not (complement_law t)
 complement_law l = l
-
 
 
 --Todo the other way (from (not p) and (not q) to not (p and q)
@@ -151,11 +216,16 @@ simplify_nots (Not s) =
 simplify_nots l = l
 
 
+
+
 -- General functions
 get_random_element :: [a] -> IO a
 get_random_element l = do
     i <- randomRIO(0, length l - 1)
     return (l !! i)
+
+
+
 
 
 
@@ -172,7 +242,7 @@ remove_duplicats' f [x] = [x]
 remove_duplicats :: Eq a => [a] -> [a]
 remove_duplicats [xs] = remove_duplicats' (==) [xs]
 
---random stuff
+--other stuff
 applyPairwise :: (a -> a -> b) -> [a] -> [b]
 applyPairwise pairF l = zipWith pairF l $ tail l
 

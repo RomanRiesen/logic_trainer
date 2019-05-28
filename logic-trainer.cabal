@@ -4,7 +4,7 @@ version:             0.1.0.0
 -- description:
 homepage:            https://github.com/RomanRiesen/logic-trainer#readme
 license:             BSD3
-license-file:        LICENSE
+license-file:        README.md
 author:              Roman
 maintainer:          Roman.Riesen42@gmail.com
 copyright:           2019 Roman
@@ -17,5 +17,5 @@ executable logic-trainer
   hs-source-dirs:      src
   main-is:             Main.hs
   default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5, random, containers
+  build-depends:       base >= 4.7 && < 5, random, containers, parsec
   other-modules:       Logic

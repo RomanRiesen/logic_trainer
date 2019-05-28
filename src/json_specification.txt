@@ -1,0 +1,24 @@
+
+Json fields in both request and response:
+    "type": "convolute" (convolute user input)
+            "train" (generate training example)
+            "simplify" (simplify user input (long way off!))
+
+Json fields in requests:
+    When type == (convolute || train):
+        "steps", the number of steps from simplest form to shown form
+
+
+#A few example json exchanges
+
+#request
+{
+    "type": "convolute",
+    "steps": 1,
+    "formula": "(a and b)",
+}
+#possible response
+{
+    "type":"convolute",
+    "formulas": [["(a and b)", "start"], ["(a and (b or F))", "Idempotence"],
+}
