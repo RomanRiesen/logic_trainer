@@ -1,5 +1,7 @@
 # logic-trainer
 
+Horrendous and inefficient and the parser is not even really working. Should not be used or looked at.
+
 # TODO:
 ## Top Priority:
 1 inverse functions
