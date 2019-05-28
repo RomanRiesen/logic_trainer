@@ -1,0 +1,30 @@
+
+<html encoding="utf8">
+
+
+<div id="result"></div>
+
+
+<script>
+
+var result_div = document.getElementById("result");
+
+var formula_to_str = (arr, str="") =>
+{
+    return str
+}
+
+const get_logic = async (j) => 
+{
+    const fetched = await fetch('api');
+    const r = await js.json(fetched);
+    console.log(r);
+    result_div.innerHTML = formula_to_str(JSON.parse(r))//.formulas;
+}
+
+get_logic();
+
+
+</script>
+</html>
+
