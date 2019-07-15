@@ -1,30 +1,166 @@
-
 <html encoding="utf8">
 
+<style>
+    table {
+        border-collapse: collapse;
+        margin: auto;
+    }
+    td {
+        border-bottom: 1px solid darkgrey;
+        padding-top: 0.5em;
+    }
+    .explanation {
+        text-align: right;
+    }
 
-<div id="result"></div>
+    #controls {
+    }
 
+    #result_div {
+        position: absolute;
+        left: 0%;
+        top: 0%;
+        width: 99vw;
+        margin-top: 10vh;
+        min-height: 89vh;
+    }
+
+</style>
+
+<body>
+
+<div id="controls">
+    <form id="mode_select"> //https://stackoverflow.com/questions/8838648/onchange-event-handler-for-radio-button-input-type-radio-doesnt-work-as-one
+        <input type="radio" name="mode_radio" value="train" checked> Train <br>
+        <input type="radio" name="mode_radio" value="convolute"> Convolute<br>
+        <input type="radio" name="mode_radio" value="simplify"> Simplify<br>
+    </form>
+
+    <input type="text" id="formula_to_send" placeholder="Formula" value="((a and (not b)) or T)">
+    <input type="button" onclick="main()" value="go!"/><br>
+    <input type="button" onclick="unhide_next_formula()" value="Next step"/><br>
+</div>
+
+<div id='result_div'>
+    <table id='result'></table>
+</div>
+</body>
 
 <script>
+//TODO add 'namespace'
 
-var result_div = document.getElementById("result");
+var result_table = document.getElementById("result");
+var formula_divs = [];
+var hide_formulas = true;
 
-var formula_to_str = (arr, str="") =>
+var current_input_formula
+var current_input_mode
+
+function unhide_next_formula ()
 {
-    return str
+    let tds = document.getElementsByClassName("explanation")
+    for(td of tds)
+    {
+        tr = td.parentNode
+        if(tr.style.visibility == "hidden")
+        {
+            tr.style.visibility = "visible";
+            break;
+        }
+    }
 }
 
-const get_logic = async (j) => 
+const symbol_families =
 {
-    const fetched = await fetch('api');
-    const r = await js.json(fetched);
-    console.log(r);
-    result_div.innerHTML = formula_to_str(JSON.parse(r))//.formulas;
+    "math" : {"and":"&and;", "or":"&or;", "not":"&not;", "t":"T", "f":"F", "entails":"⊨"},
+    "ee": {"and":"", "or":"+", "not":"~", "t":"T", "f":"F", "entails":"⊨"},
+    "xstem" : {"and":"∧", "or":"∨", "not":"¬", "t":"⊤", "f":"⊥", "entails":"⊨"}
 }
 
-get_logic();
+function formula_to_str (f, str_arr=[], symbol_map = symbol_families["math"])
+{
+    //recursive helper function
+    let rec_helper = (o) =>
+    {
+        let obj_keys = Object.keys(o);
+        let first_k = obj_keys[0]
+        if (first_k === "literal")
+        {//Literal, no more recursion!
+            str_arr.push(o[first_k])//add the literal name
+            return;
+        }
+        else if ( 
+            first_k === "f" ||
+            first_k === "t"
+        )
+        {
+            str_arr.push(symbol_map[first_k]);
+            return;
+        }
+        //else if (o[first_k].length == 1)
+        else if (first_k === "not")
+        {//Unary operation (not)
+            str_arr.push(symbol_map[first_k]);//name of operator
+            rec_helper(o[first_k]);//left operant
+        }
+        else if(o[first_k].length === 2)
+        {//Binary operation
+            str_arr.push("(");
+            rec_helper(o[first_k][0]);//left operant
+            str_arr.push(symbol_map[first_k]);//name of operator
+            rec_helper(o[first_k][1]);//right operant
+            str_arr.push(")");
+        }
+    }
+    rec_helper(f);
 
+    var ret_str = str_arr.join(" ");
+
+    return ret_str;
+}
+
+async function get_logic (mode = "convolute", formula = "(a and b)",
+        convolution_steps = "5")
+{
+    let min_seed = -(2**31);
+    let max_seed = -min_seed - 1;
+    let current_seed = Math.floor(Math.random() * (max_seed - min_seed) + min_seed);
+    let url = `api/${mode}?formula=${formula}&steps=${convolution_steps}&seed=${current_seed}`;
+    console.log(url);
+    const fetched = await fetch(url);
+    const r = await fetched.json();
+    return r.formulas
+}
+
+async function render_logic (formulas)
+{
+    let symbol_expl_space = "&nbsp;"
+
+    for(f of formulas.reverse())//FIXME should 'move explanation one place down'. If you, future me, know what I mean.
+    {
+        //Create new, hidden elements
+        let visible = hide_formulas ? 'hidden' : 'visible'
+        result_table.innerHTML += (//Maybe nicer with format strings? Also FIXME should probably push to a queue so I know that I show in proper order
+            "<tr style='visibility: " + visible + ";'> \
+            <td>" + formula_to_str(f[0]) + symbol_expl_space + "</td> \
+            <td class='explanation'>[" + f[1] + "]</td></tr>"
+        );
+    }
+}
+
+async function main ()
+{
+    result_table.innerHTML = "";
+    start_formula = document.getElementById('formula_to_send').value;//"(a or (b and c))";//"(a and (b or T)" leads to endless loop on server. WHY?
+    formulas = await get_logic("convolute", start_formula);
+    render_logic(formulas);
+    unhide_next_formula();
+}
+
+document.getElementById('result_div').onclick = ()=>{unhide_next_formula();}
+document.getElementById('result_div').onkeyup = (e) => { if(e.keyCode == 32) {unhide_next_formula();}}
+
+main().catch();//TODO: Catch
 
 </script>
 </html>
-

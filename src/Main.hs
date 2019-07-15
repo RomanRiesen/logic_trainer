@@ -1,35 +1,22 @@
 module Main where
-import Logic
+
 import System.Random
+import System.Environment
 
-
---applies n (Symbol->Symbol) functions randomly chosen from list to sym and returns a list of tuples
---FIXME it would be quite a bit more elegant to catch repeated entries in the list here
-convolute :: Int -> [((Symbol -> Symbol), String)] -> Symbol -> IO [(Symbol, String)]
-convolute n [] sym = error "Imposssible to convolute"
-convolute n l sym = do
- --TODO should only search for elements in l that actually change sym. -> filter
-  (f, e) <- (get_random_element l)
-  let sym' = f sym
-  if sym' == sym then --if this symbol already is in the list it is not new (duh.)
-    convolute n l sym
-  else
-      if n-1 > 0 then do
-        rest <- convolute (n-1) l sym'
-        return ([(sym', e)] ++ rest)
-      else
-          return [(sym', e)]
-
-
-convolute' :: Int -> [(Symbol -> Symbol)] -> Symbol -> IO [Symbol]
-convolute' n l sym = do
-  c <- convolute n (zip l $ repeat "") sym
-  let c' = fst $ unzip c
-  return c'
+import Logic
+import Server
 
 
 main :: IO ()
-main =
+main = server_main
+-- = do
+  --args <- getArgs
+  --case head args of
+    --"serve" -> server_main
+    --_ -> normal_main
+
+
+normal_main =
   do
     let a = Literal "a"
     let b = Literal "b"

@@ -6,6 +6,7 @@ module Logic where
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromJust)
 import Data.Either (fromRight)
+--import Data.Word
 --import Control.Monad.Random
 import System.Random
 import Text.ParserCombinators.Parsec
@@ -24,20 +25,19 @@ data Symbol =
   | F
   deriving (Eq)
 
-
 instance Show Symbol where --Fixme should only print necessary parens!
-  --show (And a b) = "(" ++ (show a) ++ " ∧ " ++ (show b) ++ ")"
-  --show (Or a b) = "(" ++ (show a) ++ " ∨ "  ++ (show b) ++ ")"
-  --show (Not s) = "¬(" ++ (show s) ++ ")"
-  --show (Literal s) = s
-  --show (T) = "⊤"
-  --show (F) = "⊥"
-  show (And a b) = "(" ++ (show a) ++ " AND " ++ (show b) ++ ")"
-  show (Or a b) = "(" ++ (show a) ++ " OR "  ++ (show b) ++ ")"
-  show (Not s) = "not(" ++ (show s) ++ ")"
+  show (And a b) = "(" ++ (show a) ++ " ∧ " ++ (show b) ++ ")"
+  show (Or a b) = "(" ++ (show a) ++ " ∨ "  ++ (show b) ++ ")"
+  show (Not s) = "¬(" ++ (show s) ++ ")"
   show (Literal s) = s
-  show (T) = "T"
-  show (F) = "F"
+  show (T) = "⊤"
+  show (F) = "⊥"
+  --show (And a b) = "(" ++ (show a) ++ " AND " ++ (show b) ++ ")"
+  --show (Or a b) = "(" ++ (show a) ++ " OR "  ++ (show b) ++ ")"
+  --show (Not s) = "not(" ++ (show s) ++ ")"
+  --show (Literal s) = s
+  --show (T) = "T"
+  --show (F) = "F"
 
 --instance Eq Symbol where  -- auto derived
   --Literal a == Literal b = a == b
@@ -46,53 +46,59 @@ instance Show Symbol where --Fixme should only print necessary parens!
   --(Not s) == (Not t) = (s == t)
   --_ == _ = False
 
+errorSymbol = Literal "ERROR"
 
 -- parsing! Only parse the symbols 'and', 'or', 'not', 'F', 'T', '(', ')'
 parseLiteral :: Parser Symbol
 parseLiteral = do
-  try spaces
-  first <- letter
+  first <- letter --literals may not start with number...because I say so.
   rest <- many (letter <|> digit)
   let str = first:rest
   case str of
     "T" -> return T
     "F" -> return F
-    "not" -> do{try space; char '('; x <- do{parseExpr;}; char ')'; return $ Not x}
     _ -> return $ Literal str
 
--- (a and b) or c and d -> (Or (And a b) (And c d))
-parseAndOr :: Parser Symbol
-parseAndOr = do
+
+parseNot :: Parser Symbol
+parseNot = do
   char '('
-  try spaces
-  a <- parseExpr
-  spaces
-  op <- many letter
-  spaces
-  b <- parseExpr
-  try spaces
+  string "not"
+  --try $ char '('
+  space
+  sym <- parseExpr
   char ')'
-  return $ case op of 
-    "and" -> And a b
-    "or" -> Or a b
+  return $ Not sym
+
+
+-- (a and b) or c and d -> (Or (And a b) (And c d))
+parseBinary :: String -> (Symbol -> Symbol -> Symbol) -> Parser Symbol
+parseBinary s sym = do
+  char '('
+  a <- parseExpr
+  space
+  string s
+  space
+  b <- parseExpr
+  char ')'
+  return $ sym a b
 
 -- at first skip everything in parentheses then parse nots before ands before ors...no clue how to do this yet. So simplest working solution first.
 parseExpr :: Parser Symbol
-parseExpr =  parseAndOr <|> parseLiteral
+parseExpr = do
+  res <- (try $ parseBinary "and" And) 
+     <|> (try $ parseBinary "or" Or)
+     <|> (try parseNot)
+     <|> parseLiteral 
 
-readExpr :: String -> String
-readExpr input = case parse parseExpr "logic" input of
-    Left err -> "No match: " ++ show err
-    Right v -> "Found value: " ++ show v
+  return res
 
-
-readExpr' :: String -> Symbol
-readExpr' input = fromRight (Literal "ERROR") (parse parseExpr "logic" input)
-
+readExpr :: String -> Symbol
+readExpr input = fromRight errorSymbol (parse parseExpr "logic" input)
 
 --instance Read Symbol where 
---instance Read Symbol where
-   --readsPrec = readExpr' input
+instance Read Symbol where
+  readsPrec _ s = [(readExpr s,"")]
 
 
 evaluate :: Symbol -> (Map.Map String Bool) -> Bool
@@ -184,8 +190,8 @@ identity_lawsInvOr t = Or t T
 
 
 complement_law :: Symbol -> Symbol
-complement_law (And s (Not t)) = F 
-complement_law (Or s (Not t)) = T
+complement_law (And s (Not t)) = if s == t then F else (complement_law s) `And` (Not (complement_law t))
+complement_law (Or s (Not t)) = if s == t then T else (complement_law s) `Or` (Not (complement_law t))
 complement_law (Not F) = T
 complement_law (Not T) = F
 complement_law (And s t) = And (complement_law s) (complement_law t)
@@ -206,6 +212,8 @@ de_morgan (Not n) = case n of
 de_morgan l = l
 
 
+
+
 simplify_nots :: Symbol -> Symbol
 simplify_nots (And a b) = And (simplify_nots a) (simplify_nots b)
 simplify_nots (Or a b) = Or (simplify_nots a) (simplify_nots b)
@@ -224,6 +232,161 @@ get_random_element l = do
     i <- randomRIO(0, length l - 1)
     return (l !! i)
 
+get_random_element_gen :: RandomGen g => [a] -> g -> (a, g)
+get_random_element_gen l gen = do
+  let (i, g) = randomR (0, length l -1) gen
+  (l !! i, g)
+
+
+
+--applies n (Symbol->Symbol) functions randomly chosen from list to sym and returns the new formulas with a string that names the operation performed
+convolute :: Int -> [((Symbol -> Symbol), String)] -> Symbol -> IO [(Symbol, String)]
+convolute n l (Literal "ERROR") = return [(errorSymbol, "Parse Error")] --FIXME should use errorLiteral or some macro version of that
+convolute n [] sym = error "Imposssible to convolute"
+convolute n l sym = do
+ --TODO should only search for elements in l that actually change sym. -> filter
+  (f, e) <- (get_random_element l)
+  let sym' = f sym
+  if sym' == sym then --if this symbol already is in the list it is not new (duh.)
+    convolute n l sym
+  else
+      if n-1 > 0 then do
+        rest <- convolute (n-1) l sym'
+        return ([(sym', e)] ++ rest)
+      else
+        return [(sym', e)]
+
+-- same as convolute but strips the explanation strings
+convolute' :: Int -> [(Symbol -> Symbol)] -> Symbol -> IO [Symbol]
+convolute' n l sym = do
+  c <- convolute n (zip l $ repeat "") sym
+  let c' = fst $ unzip c
+  return c'
+
+
+
+-- (helper) type that holds 2 lists, one of all the functions ()
+{-# LANGUAGE DuplicateRecordField #-} --FIXME actually use  this. 
+--FIXME maybe use a state monad?
+type Explanation = String
+
+data PossibleStep = PossibleStep {function :: (Symbol -> Symbol), possibleStepExplanation :: Explanation}
+toFunctionList :: [PossibleStep] -> [Symbol -> Symbol]
+toFunctionList steps = fmap function steps
+
+data AppliedStep = AppliedStep {symbol :: Symbol, appliedStepExplanation :: Explanation}
+toSymbolList :: [AppliedStep] -> [Symbol]
+toSymbolList steps = fmap symbol steps
+
+applyStep :: PossibleStep -> Symbol -> AppliedStep
+applyStep possible_step sym = do 
+  let new_sym = (function possible_step) sym
+  AppliedStep new_sym (possibleStepExplanation possible_step)
+
+
+all_possible_steps = [ --FIXME maybe put these function definitions in a module, then MAYBE I can create this list with metaprogramming?
+  PossibleStep idempotence "idempotence"
+  , PossibleStep idempotenceInvAnd "idempotence"
+  , PossibleStep idempotenceInvOr "idempotence"
+  , PossibleStep commutativity "commutativity"
+  , PossibleStep distributivity "distributivity"
+  , PossibleStep identity_laws "identity"
+  , PossibleStep identity_lawsInvAnd "identity"
+  , PossibleStep identity_lawsInvOr "identity"
+  , PossibleStep complement_law "complement"
+  , PossibleStep de_morgan "de morgan" ]
+
+  --all_expanding_steps = []
+
+  --ll_contracting_steps = []
+
+--data Functions = Functions {usable :: [PossibleStep], all :: [PossibleStep]}
+-- improved version because the old one was a mess, but it still feels very imperativ-y
+-- Applies random function in valid_functions then applies random function from all_functions n-1 times. Avoids duplicate formulas.
+-- sym: Symbol to be convoluted
+-- max_n: max number of formulas
+-- gen: the generator used (mkStdGen seed, probably)
+-- possiblble_steps: array of PossibleStep from which to randomly apply elements
+convolute2 :: RandomGen g => Symbol -> Int -> g -> [PossibleStep] -> [AppliedStep] -> [AppliedStep]
+convolute2 sym max_n gen possible_steps symbols_so_far = do
+  -- choose function to apply
+  let (possible_step, new_gen) = iter possible_steps gen where {
+    iter iter_functions iter_gen =
+     case iter_functions of 
+      [] -> error "Not possible to convolute"
+      _ -> do
+        let (possible_step, new_gen) = get_random_element_gen iter_functions iter_gen
+        -- apply function
+        let new_sym = (function possible_step) sym
+        -- check if function results in a symbol that is already in the list of lower ns
+        if new_sym `elem` (toSymbolList symbols_so_far) then
+          -- if it is, recurse without the tried function
+          iter [x | x <- iter_functions, possibleStepExplanation x /= possibleStepExplanation possible_step] new_gen --FIXME could map all f in iter_functions over sym -> all f just executed once instead of up to |f|^2 times
+        else 
+          (possible_step, new_gen)
+  }
+  -- f sym is unique amongst the previous symbols
+  let applied_step = applyStep possible_step sym 
+  if max_n - 1 > 0 then
+    convolute2 (symbol applied_step) (max_n - 1) new_gen possible_steps $ [applied_step] ++ symbols_so_far
+  else 
+    [applied_step] ++ symbols_so_far
+
+
+simple_convolute_seeded :: Symbol -> Int -> Int -> [PossibleStep] -> IO [AppliedStep]
+simple_convolute_seeded sym max_n seed possible_steps = do
+  let gen = mkStdGen seed
+  return $ convolute2 sym max_n gen possible_steps [AppliedStep sym "Start"]
+  
+
+--simple_convolute :: Symbol -> Int -> [PossibleStep] -> IO [AppliedStep]
+--simple_convolute sym max_n possible_steps = do
+  --s <- randomRIO (0, 2**32-1.0)
+  --let gen = mkStdGen s
+  --return $ convolute2 sym max_n gen possible_steps [AppliedStep sym "Start"]
+
+data SymbolTreeNode = Binary (Symbol -> Symbol -> Symbol) | Unary (Symbol -> Symbol) | Nullary Symbol
+
+--FIXME this could be expressed nice with use of SymbolTreeNode
+data OperatorConstructors = OperatorConstructors {
+  binaryOperators :: [Symbol -> Symbol -> Symbol]
+, unaryOperators :: [Symbol -> Symbol]
+, nullaryOperators :: [Symbol] -- terminal symbols, e.g. literals
+}
+
+operatorConstructors = OperatorConstructors [And, Or] [Not] $ [T, F] ++ fmap (\c -> Literal [c]) ['a'..'z']
+
+-- FIXME quite ugly, improve OperatorConstructors to make this simpler
+generate_random_symbol_tree_node :: RandomGen gen => OperatorConstructors -> Float -> gen -> (SymbolTreeNode, gen)
+generate_random_symbol_tree_node opcs prob gen = do
+  let (rprob, gen') = randomR (0.0, 1.0) gen
+  if rprob < prob then do
+    let t = get_random_element_gen (nullaryOperators opcs) gen'
+    (Nullary $ fst t, snd t)
+  else do
+    let binaryOpLength = length $ binaryOperators opcs
+    let unaryOpLength = length $ unaryOperators opcs
+    let (num_picked, gen'') = randomR (0, binaryOpLength + unaryOpLength) gen'
+    if num_picked > (binaryOpLength - 1) then do
+      let t = get_random_element_gen (binaryOperators opcs) gen''
+      (Binary $ fst t, snd t)
+    else do
+      let t = get_random_element_gen (unaryOperators opcs) gen''
+      (Unary $ fst t, snd t)
+
+
+--prob: probability for each new node that it will be a leaf
+generate_formula :: (RandomGen gen) => Float -> gen -> (Symbol, gen)
+generate_formula prob gen = do
+  let get_tree_node = generate_random_symbol_tree_node operatorConstructors prob
+  let (symnt, gen') = get_tree_node gen
+  case symnt of
+    Nullary s -> (s, gen')
+    Unary s -> (s $ sym, gen'') where (sym, gen'') = generate_formula prob gen'
+    Binary s -> do 
+      let (sym, gen'') = generate_formula prob gen'
+      let (sym', gen''') = generate_formula prob gen''
+      (s sym sym', gen''')
 
 
 
